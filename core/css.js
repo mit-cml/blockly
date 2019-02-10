@@ -535,7 +535,7 @@ Blockly.Css.CONTENT = [
   '}',
 
   '.blocklyZoom>image {',
-  'opacity: .4;',
+  'opacity: 1;',
   '}',
 
   '.blocklyZoom>image:hover {',
