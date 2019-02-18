@@ -720,8 +720,7 @@ Blockly.BlockSvg.prototype.onMouseUp_ = function(e) {
       }
       if (confirmedDelete) {
 	Blockly.selected.dispose(false, true);
-      }
-      else{
+      } else {
         //Move block back to original position if trash is canceled
         var group = Blockly.selected.getSvgRoot();
         group.translate_ = 'translate(' + oldXY.x + ',' + oldXY.y + ')';
