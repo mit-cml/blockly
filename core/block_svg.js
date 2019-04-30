@@ -872,10 +872,14 @@ Blockly.BlockSvg.prototype.showContextMenu_ = function(e) {
       text: descendantCount == 1 ? Blockly.Msg.DELETE_BLOCK :
           Blockly.Msg.DELETE_X_BLOCKS.replace('%1', String(descendantCount)),
       enabled: true,
-      callback: function() {
-        Blockly.Events.setGroup(true);
-        block.dispose(true, true);
-        Blockly.Events.setGroup(false);
+      callback: function () {
+        Blockly.confirmDeletion(function (confirmedDelete) {
+          if (confirmedDelete) {
+            Blockly.Events.setGroup(true);
+            block.dispose(true, true);
+            Blockly.Events.setGroup(false);
+          }
+        });
       }
     };
     menuOptions.push(deleteOption);

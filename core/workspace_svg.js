@@ -1194,13 +1194,11 @@ Blockly.WorkspaceSvg.prototype.showContextMenu_ = function(e) {
       if (deleteList.length < 2 ) {
         deleteNext();
       } else {
-        Blockly.confirm(Blockly.Msg.DELETE_ALL_BLOCKS.
-            replace('%1', deleteList.length),
-            function(ok) {
-              if (ok) {
-                deleteNext();
-              }
-            });
+        Blockly.confirmDeletion(function(confirmedDelete) {
+          if (confirmedDelete) {
+            deleteNext();
+          }
+        });
       }
     }
   };

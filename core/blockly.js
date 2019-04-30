@@ -211,7 +211,20 @@ Blockly.onKeyDown_ = function(e) {
     // When focused on an HTML text input widget, don't trap any keys.
     return;
   }
-  var deleteBlock = false;
+
+    //Common code for delete and cut.
+  function deleteBlock() {
+    Blockly.Events.setGroup(true);
+    Blockly.hideChaff();
+    var heal = Blockly.dragMode_ != Blockly.DRAG_FREE;
+    Blockly.selected.dispose(heal, true);
+    if (Blockly.highlightedConnection_) {
+      Blockly.highlightedConnection_.unhighlight();
+      Blockly.highlightedConnection_ = null;
+    }
+    Blockly.Events.setGroup(false);
+  }
+
   if (e.keyCode == 27) {
     // Pressing esc closes the context menu.
     Blockly.hideChaff();
@@ -221,21 +234,11 @@ Blockly.onKeyDown_ = function(e) {
     // Do this first to prevent an error in the delete code from resulting in
     // data loss.
     e.preventDefault();
-    if (Blockly.selected && Blockly.selected.isDeletable()) {
-      var descendantCount = Blockly.selected.getDescendants().length;
-      if (Blockly.selected.nextConnection && Blockly.selected.nextConnection.targetConnection) {
-        descendantCount -= Blockly.selected.nextConnection.targetBlock().
-          getDescendants().length;
+    Blockly.confirmDeletion(function(confirmedDelete) {
+      if (confirmedDelete) {
+        deleteBlock();
       }
-      // Ask for confirmation before deleting 3 or more blocks
-      if (descendantCount >= 3) {
-        if (confirm("Are you sure you want to delete all " + descendantCount + " of these blocks?")) {
-          deleteBlock = true;
-        }
-      } else {
-        deleteBlock = true;
-      }
-    }
+    });
   } else if (e.altKey || e.ctrlKey || e.metaKey) {
     if (Blockly.selected &&
         Blockly.selected.isDeletable() && Blockly.selected.isMovable()) {
@@ -246,7 +249,7 @@ Blockly.onKeyDown_ = function(e) {
       } else if (e.keyCode == 88) {
         // 'x' for cut.
         Blockly.copy_(Blockly.selected);
-        deleteBlock = true;
+        deleteBlock();
       }
     }
     if (e.keyCode == 86) {
@@ -262,18 +265,6 @@ Blockly.onKeyDown_ = function(e) {
       Blockly.hideChaff();
       Blockly.mainWorkspace.undo(e.shiftKey);
     }
-  }
-  if (deleteBlock) {
-    // Common code for delete and cut.
-    Blockly.Events.setGroup(true);
-    Blockly.hideChaff();
-    var heal = Blockly.dragMode_ != Blockly.DRAG_FREE;
-    Blockly.selected.dispose(heal, true);
-    if (Blockly.highlightedConnection_) {
-      Blockly.highlightedConnection_.unhighlight();
-      Blockly.highlightedConnection_ = null;
-    }
-    Blockly.Events.setGroup(false);
   }
 };
 
@@ -388,16 +379,6 @@ Blockly.alert = function(message, opt_callback) {
   if (opt_callback) {
     opt_callback();
   }
-};
-
-/**
- * Wrapper to window.confirm() that app developers may override to
- * provide alternatives to the modal browser window.
- * @param {string} message The message to display to the user.
- * @param {!function(boolean)} callback The callback for handling user response.
- */
-Blockly.confirm = function(message, callback) {
-  callback(window.confirm(message));
 };
 
 /**
