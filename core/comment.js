@@ -47,7 +47,7 @@ goog.inherits(Blockly.Comment, Blockly.Icon);
  * Comment text (if bubble is not visible).
  * @private
  */
-Blockly.Comment.prototype.text_ = '';
+Blockly.Comment.prototype.text_ = null;
 
 /**
  * Width of bubble.
@@ -258,7 +258,7 @@ Blockly.Comment.prototype.getText = function() {
 
 /**
  * Set this comment's text.
- * @param {string} text Comment text.
+ * @param {?string} text Comment text.
  */
 Blockly.Comment.prototype.setText = function(text) {
   if (this.text_ != text) {
@@ -267,7 +267,7 @@ Blockly.Comment.prototype.setText = function(text) {
     this.text_ = text;
   }
   if (this.textarea_) {
-    this.textarea_.value = text;
+    this.textarea_.value = text || '';
   }
 };
 
@@ -276,7 +276,7 @@ Blockly.Comment.prototype.setText = function(text) {
  */
 Blockly.Comment.prototype.dispose = function() {
   if (Blockly.Events.isEnabled()) {
-    this.setText('');  // Fire event to delete comment.
+    this.setText(null);  // Fire event to delete comment.
   }
   this.block_.comment = null;
   Blockly.Icon.prototype.dispose.call(this);

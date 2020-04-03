@@ -576,7 +576,7 @@ Blockly.Events.Change.prototype.run = function(forward) {
       }
       break;
     case 'comment':
-      block.setCommentText(value || null);
+      block.setCommentText(typeof value === 'string' ? value : null);
       break;
     case 'collapsed':
       block.setCollapsed(value);
