@@ -603,6 +603,11 @@ Blockly.Events.Change.prototype.run = function(forward) {
       Blockly.Events.fire(new Blockly.Events.Change(
           block, 'mutation', null, oldMutation, value));
       break;
+    case 'parameter_orientation':
+      if (block.setParameterOrientation) {
+        block.setParameterOrientation(value);
+      }
+      break;
     default:
       console.warn('Unknown change type: ' + this.element);
   }
