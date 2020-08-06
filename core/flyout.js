@@ -131,6 +131,13 @@ Blockly.Flyout = function(workspaceOptions) {
  */
 Blockly.Flyout.prototype.VERTICAL_SEPARATION_FACTOR = 2;
 
+/**
+ * The maximum width in pixels a vertical flyout can be.
+ * @type {number}
+ * @const
+ */
+Blockly.Flyout.prototype.MAX_WIDTH = 300;
+
 /*
  * Wrapper function called when a resize occurs.
  * @type {Array.<!Array>}
@@ -308,7 +315,17 @@ Blockly.Flyout.prototype.createDom = function(tagName) {
       {'class': 'blocklyFlyout', 'style': 'display: none'}, null);
   this.svgBackground_ = Blockly.utils.createSvgElement('path',
       {'class': 'blocklyFlyoutBackground'}, this.svgGroup_);
-  this.svgGroup_.appendChild(this.workspace_.createDom());
+
+  // Must include random because there will be multiple of these on the page.
+  var id = 'blocklyFlyoutClipPath' + String(Math.random()).substring(2);
+  var clipPath = Blockly.utils.createSvgElement('clipPath',
+      {'id': id}, this.svgGroup_);
+  this.clip_ = Blockly.utils.createSvgElement('rect', {'x': 0, 'y': 0}, clipPath);
+
+  var workspaceDom = this.workspace_.createDom();
+  workspaceDom.setAttribute('clip-path', 'url(#' + id + ')');
+  this.svgGroup_.appendChild(workspaceDom);
+
   Array.prototype.push.apply(this.eventWrappers_,
       Blockly.bindEvent_(this.svgGroup_, 'wheel', this, this.wheel_));
   // Dragging the flyout up and down.
@@ -516,6 +533,8 @@ Blockly.Flyout.prototype.position = function() {
     this.height_ = targetWorkspaceMetrics.viewHeight;
   }
 
+  this.clip_.setAttribute('width', this.width_ + 'px');
+  this.clip_.setAttribute('height', this.height_ + 'px');
   this.svgGroup_.setAttribute("width", this.width_);
   this.svgGroup_.setAttribute("height", this.height_);
   var transform = 'translate(' + x + 'px,' + y + 'px)';
@@ -1493,6 +1512,7 @@ Blockly.Flyout.prototype.reflowVertical = function(blocks) {
   flyoutWidth += this.MARGIN * 1.5 + Blockly.BlockSvg.TAB_WIDTH;
   flyoutWidth *= this.workspace_.scale;
   flyoutWidth += Blockly.Scrollbar.scrollbarThickness;
+  flyoutWidth = Math.min(flyoutWidth, this.MAX_WIDTH);
   if (this.width_ != flyoutWidth) {
     for (var i = 0, block; block = blocks[i]; i++) {
       var blockHW = block.getHeightWidth();
