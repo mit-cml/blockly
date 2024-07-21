@@ -168,21 +168,21 @@ Blockly.Flyout.startBlock_ = null;
  * @type {Array.<!Array>}
  * @private
  */
-Blockly.Flyout.onMouseUpWrapper_ = null;
+Blockly.Flyout.prototype.onMouseUpWrapper_ = null;
 
 /**
  * Wrapper function called when a mousemove occurs during a background drag.
  * @type {Array.<!Array>}
  * @private
  */
-Blockly.Flyout.onMouseMoveWrapper_ = null;
+Blockly.Flyout.prototype.onMouseMoveWrapper_ = null;
 
 /**
  * Wrapper function called when a mousemove occurs during a block drag.
  * @type {Array.<!Array>}
  * @private
  */
-Blockly.Flyout.onMouseMoveBlockWrapper_ = null;
+Blockly.Flyout.prototype.onMouseMoveBlockWrapper_ = null;
 
 /**
  * Does the flyout automatically close when a block is created?
@@ -768,7 +768,6 @@ Blockly.Flyout.prototype.show = function(xmlList) {
   }
 
   this.setVisible(true);
-  this.workspace_.rendered = false;
   // Create the blocks to be shown in this flyout.
   var contents = [];
   var gaps = [];
@@ -815,12 +814,6 @@ Blockly.Flyout.prototype.show = function(xmlList) {
       }
     }
   }
-  this.workspace_.rendered = true;
-  var blocks = goog.object.getValues(this.workspace_.blockDB_);
-  for (var i = 0; i < blocks.length; i++) {
-    blocks[i].initSvg();
-  }
-  this.workspace_.render();
 
   this.layout_(contents, gaps);
 
@@ -1012,9 +1005,9 @@ Blockly.Flyout.prototype.blockMouseDown_ = function(block) {
       Blockly.Flyout.startDownEvent_ = e;
       Blockly.Flyout.startBlock_ = block;
       Blockly.Flyout.startFlyout_ = flyout;
-      Blockly.Flyout.onMouseUpWrapper_ = Blockly.bindEventWithChecks_(document,
+      flyout.onMouseUpWrapper_ = Blockly.bindEventWithChecks_(document,
           'mouseup', flyout, flyout.onMouseUp_);
-      Blockly.Flyout.onMouseMoveBlockWrapper_ = Blockly.bindEventWithChecks_(
+      flyout.onMouseMoveBlockWrapper_ = Blockly.bindEventWithChecks_(
           document, 'mousemove', flyout, flyout.onMouseMoveBlock_);
     }
     // This event has been handled.  No need to bubble up to the document.
@@ -1039,10 +1032,12 @@ Blockly.Flyout.prototype.onMouseDown_ = function(e) {
   this.startDragMouseY_ = e.clientY;
   this.startDragMouseX_ = e.clientX;
   Blockly.Flyout.startFlyout_ = this;
-  Blockly.Flyout.onMouseMoveWrapper_ = Blockly.bindEventWithChecks_(document,
-      'mousemove', this, this.onMouseMove_);
-  Blockly.Flyout.onMouseUpWrapper_ = Blockly.bindEventWithChecks_(document,
-      'mouseup', this, Blockly.Flyout.terminateDrag_);
+  if (!this.onMouseMoveWrapper_) {
+    this.onMouseMoveWrapper_ = Blockly.bindEventWithChecks_(document,
+        'mousemove', this, this.onMouseMove_);
+    this.onMouseUpWrapper_ = Blockly.bindEventWithChecks_(document,
+        'mouseup', this, Blockly.Flyout.terminateDrag_);
+  }
   // This event has been handled.  No need to bubble up to the document.
   e.preventDefault();
   e.stopPropagation();
@@ -1209,6 +1204,19 @@ Blockly.Flyout.prototype.isDragTowardWorkspace_ = function(dx, dy) {
   return false;
 };
 
+// These changes mimic how core works on the latest version, and can be safely
+// removed during an upgrade.
+/**
+ * Returns if the flyout allows a new instance of the given block to be created.
+ * Used for deciding if a block can be "dragged out of" the flyout.
+ * By default all non-disabled blocks are creatable.
+ * @param {!Blockly.BlockSvg} block The block to copy from the flyout.
+ * @return {boolean} True if the flyout allows the block to be instantiated.
+ */
+Blockly.Flyout.prototype.isBlockCreatable_ = function(block) {
+  return !block.disabled;
+}
+
 /**
  * Create a copy of this block on the workspace.
  * @param {!Blockly.Block} originBlock The flyout block to copy.
@@ -1222,8 +1230,7 @@ Blockly.Flyout.prototype.createBlockFunc_ = function(originBlock) {
       // Right-click.  Don't create a block, let the context menu show.
       return;
     }
-    if (originBlock.disabled) {
-      // Beyond capacity.
+    if (!flyout.isBlockCreatable_(originBlock)) {
       return;
     }
     Blockly.Events.disable();
@@ -1397,24 +1404,25 @@ Blockly.Flyout.prototype.getClientRect = function() {
  */
 Blockly.Flyout.terminateDrag_ = function() {
   if (Blockly.Flyout.startFlyout_) {
+    var flyout = Blockly.Flyout.startFlyout_;
     // User was dragging the flyout background, and has stopped.
     if (Blockly.Flyout.startFlyout_.dragMode_ == Blockly.DRAG_FREE) {
       Blockly.Touch.clearTouchIdentifier();
     }
     Blockly.Flyout.startFlyout_.dragMode_ = Blockly.DRAG_NONE;
     Blockly.Flyout.startFlyout_ = null;
-  }
-  if (Blockly.Flyout.onMouseUpWrapper_) {
-    Blockly.unbindEvent_(Blockly.Flyout.onMouseUpWrapper_);
-    Blockly.Flyout.onMouseUpWrapper_ = null;
-  }
-  if (Blockly.Flyout.onMouseMoveBlockWrapper_) {
-    Blockly.unbindEvent_(Blockly.Flyout.onMouseMoveBlockWrapper_);
-    Blockly.Flyout.onMouseMoveBlockWrapper_ = null;
-  }
-  if (Blockly.Flyout.onMouseMoveWrapper_) {
-    Blockly.unbindEvent_(Blockly.Flyout.onMouseMoveWrapper_);
-    Blockly.Flyout.onMouseMoveWrapper_ = null;
+    if (flyout.onMouseUpWrapper_) {
+      Blockly.unbindEvent_(flyout.onMouseUpWrapper_);
+      flyout.onMouseUpWrapper_ = null;
+    }
+    if (flyout.onMouseMoveBlockWrapper_) {
+      Blockly.unbindEvent_(flyout.onMouseMoveBlockWrapper_);
+      flyout.onMouseMoveBlockWrapper_ = null;
+    }
+    if (flyout.onMouseMoveWrapper_) {
+      Blockly.unbindEvent_(flyout.onMouseMoveWrapper_);
+      flyout.onMouseMoveWrapper_ = null;
+    }
   }
   Blockly.Flyout.startDownEvent_ = null;
   Blockly.Flyout.startBlock_ = null;

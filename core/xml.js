@@ -252,6 +252,29 @@ Blockly.Xml.domToPrettyText = function(dom) {
 };
 
 /**
+ * Escapes unprintable characters to prevent parsing errors.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+Blockly.Xml.sanitizeText = function(text) {
+  if (!text.match(/[\u0000-\u0009\u000B\u000C\u000E-\u001F]/)) {
+    return text;
+  }
+  var match;
+  var newtext = '';
+  while ((match = text.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/))) {
+    newtext += text.substring(0, match.index);
+    newtext += '&#x';
+    newtext += text.charCodeAt(match.index).toString(16);
+    newtext += ';';
+    text = text.substr(match.index + 1);
+  }
+  newtext += text;
+  return newtext;
+}
+
+/**
  * Converts plain text into a DOM structure.
  * Throws an error if XML doesn't parse.
  * @param {string} text Text representation.
@@ -259,13 +282,20 @@ Blockly.Xml.domToPrettyText = function(dom) {
  */
 Blockly.Xml.textToDom = function(text) {
   var oParser = new DOMParser();
+  text = Blockly.Xml.sanitizeText(text);
   var dom = oParser.parseFromString(text, 'text/xml');
   // The DOM should have one and only one top-level node, an XML tag.
   if (!dom || !dom.firstChild ||
       dom.firstChild.nodeName.toLowerCase() != 'xml' ||
-      dom.firstChild !== dom.lastChild) {
+      dom.firstChild !== dom.lastChild ||
+      (dom.firstChild.firstChild &&
+       dom.firstChild.firstChild.nodeName.toLowerCase() == 'parsererror')) {
     // Whatever we got back from the parser is not XML.
-    goog.asserts.fail('Blockly.Xml.textToDom did not obtain a valid XML tree.');
+    dom = oParser.parseFromString(text, 'text/html');
+    if (!dom || !dom.body.firstChild || dom.body.firstChild.nodeName.toLowerCase() != 'xml') {
+      goog.asserts.fail('Blockly.Xml.textToDom did not obtain a valid XML tree.');
+    }
+    dom = dom.body;
   }
   return dom.firstChild;
 };
