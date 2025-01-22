@@ -158,6 +158,7 @@ export class InsertionMarkerPreviewer implements IConnectionPreviewer {
   private createInsertionMarker(origBlock: BlockSvg) {
     const result = this.workspace.newBlock(origBlock.type);
     result.setInsertionMarker(true);
+    result.setInputsInline(origBlock.getInputsInline());
     if (origBlock.saveExtraState) {
       const state = origBlock.saveExtraState(true);
       if (state && result.loadExtraState) {
