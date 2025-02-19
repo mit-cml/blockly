@@ -731,10 +731,10 @@ const ANIMATION_LENGTH = 80;
 const ANIMATION_FRAMES = 4;
 
 /** The minimum (resting) opacity of the trashcan and lid. */
-const OPACITY_MIN = 0.4;
+const OPACITY_MIN = 1.0;
 
 /** The maximum (hovered) opacity of the trashcan and lid. */
-const OPACITY_MAX = 0.8;
+const OPACITY_MAX = 1.0;
 
 /**
  * The maximum angle the trashcan lid can opens to. At the end of the open
