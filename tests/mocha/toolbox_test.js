@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {assert} from '../../node_modules/chai/chai.js';
+import {assert} from '../../node_modules/chai/index.js';
 import {defineStackBlock} from './test_helpers/block_definitions.js';
 import {
   sharedTestSetup,
@@ -47,13 +47,14 @@ suite('Toolbox', function () {
     test('Init called -> HtmlDiv is inserted before parent node', function () {
       const toolboxDiv = Blockly.common.getMainWorkspace().getInjectionDiv()
         .childNodes[0];
-      assert.equal(toolboxDiv.className, 'blocklyToolboxDiv');
+      assert.equal(toolboxDiv.className, 'blocklyToolbox');
     });
     test('Init called -> Toolbox is subscribed to background and foreground colour', function () {
       const themeManager = this.toolbox.workspace_.getThemeManager();
       const themeManagerSpy = sinon.spy(themeManager, 'subscribe');
       const componentManager = this.toolbox.workspace_.getComponentManager();
       sinon.stub(componentManager, 'addComponent');
+      this.toolbox.dispose(); // Dispose of the old toolbox so that it can be reinited.
       this.toolbox.init();
       sinon.assert.calledWith(
         themeManagerSpy,
@@ -72,12 +73,14 @@ suite('Toolbox', function () {
       const renderSpy = sinon.spy(this.toolbox, 'render');
       const componentManager = this.toolbox.workspace_.getComponentManager();
       sinon.stub(componentManager, 'addComponent');
+      this.toolbox.dispose(); // Dispose of the old toolbox so that it can be reinited.
       this.toolbox.init();
       sinon.assert.calledOnce(renderSpy);
     });
     test('Init called -> Flyout is initialized', function () {
       const componentManager = this.toolbox.workspace_.getComponentManager();
       sinon.stub(componentManager, 'addComponent');
+      this.toolbox.dispose(); // Dispose of the old toolbox so that it can be reinited.
       this.toolbox.init();
       assert.isDefined(this.toolbox.getFlyout());
     });
@@ -98,7 +101,7 @@ suite('Toolbox', function () {
           {'kind': 'category', 'contents': []},
         ],
       });
-      assert.lengthOf(this.toolbox.contents_, 2);
+      assert.equal(this.toolbox.contents.size, 2);
       sinon.assert.called(positionStub);
     });
     // TODO: Uncomment once implemented.
@@ -153,7 +156,7 @@ suite('Toolbox', function () {
         ],
       };
       this.toolbox.render(jsonDef);
-      assert.lengthOf(this.toolbox.contents_, 1);
+      assert.equal(this.toolbox.contents.size, 1);
     });
     test('multiple icon classes can be applied', function () {
       const jsonDef = {
@@ -176,7 +179,58 @@ suite('Toolbox', function () {
       assert.doesNotThrow(() => {
         this.toolbox.render(jsonDef);
       });
-      assert.lengthOf(this.toolbox.contents_, 1);
+      assert.equal(this.toolbox.contents.size, 1);
+    });
+  });
+
+  suite('focus management', function () {
+    setup(function () {
+      this.toolbox = getInjectedToolbox();
+    });
+    teardown(function () {
+      this.toolbox.dispose();
+    });
+
+    test('Losing focus hides autoclosing flyout', function () {
+      // Focus the toolbox and select a category to open the flyout.
+      const target = this.toolbox.HtmlDiv.querySelector(
+        '.blocklyToolboxCategory',
+      );
+      Blockly.getFocusManager().focusNode(this.toolbox);
+      target.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          target,
+          bubbles: true,
+        }),
+      );
+      assert.isTrue(this.toolbox.getFlyout().isVisible());
+
+      // Focus the workspace to trigger the toolbox to close the flyout.
+      Blockly.getFocusManager().focusNode(this.toolbox.getWorkspace());
+      assert.isFalse(this.toolbox.getFlyout().isVisible());
+    });
+
+    test('Losing focus does not hide non-autoclosing flyout', function () {
+      // Make the toolbox's flyout non-autoclosing.
+      this.toolbox.getFlyout().setAutoClose(false);
+
+      // Focus the toolbox and select a category to open the flyout.
+      const target = this.toolbox.HtmlDiv.querySelector(
+        '.blocklyToolboxCategory',
+      );
+      Blockly.getFocusManager().focusNode(this.toolbox);
+      target.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          target,
+          bubbles: true,
+        }),
+      );
+      assert.isTrue(this.toolbox.getFlyout().isVisible());
+
+      // Focus the workspace; this should *not* trigger the toolbox to close the
+      // flyout, which should remain visible.
+      Blockly.getFocusManager().focusNode(this.toolbox.getWorkspace());
+      assert.isTrue(this.toolbox.getFlyout().isVisible());
     });
   });
 
@@ -198,11 +252,13 @@ suite('Toolbox', function () {
       sinon.assert.calledOnce(hideChaffStub);
     });
     test('Category clicked -> Should select category', function () {
-      const categoryXml = document.getElementsByClassName('blocklyTreeRow')[0];
+      const categoryXml = document.getElementsByClassName(
+        'blocklyToolboxCategory',
+      )[0];
       const evt = {
         'target': categoryXml,
       };
-      const item = this.toolbox.contentMap_[categoryXml.getAttribute('id')];
+      const item = this.toolbox.contents.get(categoryXml.getAttribute('id'));
       const setSelectedSpy = sinon.spy(this.toolbox, 'setSelectedItem');
       const onClickSpy = sinon.spy(item, 'onClick');
       this.toolbox.onClick_(evt);
@@ -354,14 +410,16 @@ suite('Toolbox', function () {
         assert.isFalse(handled);
       });
       test('Next item is selectable -> Should select next item', function () {
-        const item = this.toolbox.contents_[0];
+        const items = [...this.toolbox.contents.values()];
+        const item = items[0];
         this.toolbox.selectedItem_ = item;
         const handled = this.toolbox.selectNext();
         assert.isTrue(handled);
-        assert.equal(this.toolbox.selectedItem_, this.toolbox.contents_[1]);
+        assert.equal(this.toolbox.selectedItem_, items[1]);
       });
       test('Selected item is last item -> Should not handle event', function () {
-        const item = this.toolbox.contents_[this.toolbox.contents_.length - 1];
+        const items = [...this.toolbox.contents.values()];
+        const item = items.at(-1);
         this.toolbox.selectedItem_ = item;
         const handled = this.toolbox.selectNext();
         assert.isFalse(handled);
@@ -385,15 +443,16 @@ suite('Toolbox', function () {
         assert.isFalse(handled);
       });
       test('Selected item is first item -> Should not handle event', function () {
-        const item = this.toolbox.contents_[0];
+        const item = [...this.toolbox.contents.values()][0];
         this.toolbox.selectedItem_ = item;
         const handled = this.toolbox.selectPrevious();
         assert.isFalse(handled);
         assert.equal(this.toolbox.selectedItem_, item);
       });
       test('Previous item is selectable -> Should select previous item', function () {
-        const item = this.toolbox.contents_[1];
-        const prevItem = this.toolbox.contents_[0];
+        const items = [...this.toolbox.contents.values()];
+        const item = items[1];
+        const prevItem = items[0];
         this.toolbox.selectedItem_ = item;
         const handled = this.toolbox.selectPrevious();
         assert.isTrue(handled);
@@ -402,9 +461,10 @@ suite('Toolbox', function () {
       test('Previous item is collapsed -> Should skip over children of the previous item', function () {
         const childItem = getChildItem(this.toolbox);
         const parentItem = childItem.getParent();
-        const parentIdx = this.toolbox.contents_.indexOf(parentItem);
+        const items = [...this.toolbox.contents.values()];
+        const parentIdx = items.indexOf(parentItem);
         // Gets the item after the parent.
-        const item = this.toolbox.contents_[parentIdx + 1];
+        const item = items[parentIdx + 1];
         this.toolbox.selectedItem_ = item;
         const handled = this.toolbox.selectPrevious();
         assert.isTrue(handled);
@@ -726,9 +786,10 @@ suite('Toolbox', function () {
     });
     test('Child categories visible if all ancestors expanded', function () {
       this.toolbox.render(getDeeplyNestedJSON());
-      const outerCategory = this.toolbox.contents_[0];
-      const middleCategory = this.toolbox.contents_[1];
-      const innerCategory = this.toolbox.contents_[2];
+      const items = [...this.toolbox.contents.values()];
+      const outerCategory = items[0];
+      const middleCategory = items[1];
+      const innerCategory = items[2];
 
       outerCategory.toggleExpanded();
       middleCategory.toggleExpanded();
@@ -741,8 +802,9 @@ suite('Toolbox', function () {
     });
     test('Child categories not visible if any ancestor not expanded', function () {
       this.toolbox.render(getDeeplyNestedJSON());
-      const middleCategory = this.toolbox.contents_[1];
-      const innerCategory = this.toolbox.contents_[2];
+      const items = [...this.toolbox.contents.values()];
+      const middleCategory = items[1];
+      const innerCategory = items[2];
 
       // Don't expand the outermost category
       // Even though the direct parent of inner is expanded, it shouldn't be visible

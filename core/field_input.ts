@@ -27,6 +27,8 @@ import {
   FieldValidator,
   UnattachedFieldError,
 } from './field.js';
+import {getFocusManager} from './focus_manager.js';
+import type {IFocusableNode} from './interfaces/i_focusable_node.js';
 import {Msg} from './msg.js';
 import * as renderManagement from './render_management.js';
 import * as aria from './utils/aria.js';
@@ -42,6 +44,11 @@ import type {WorkspaceSvg} from './workspace_svg.js';
  * @internal
  */
 type InputTypes = string | number;
+
+/**
+ * The minimum width of an input field.
+ */
+const MINIMUM_WIDTH = 14;
 
 /**
  * Abstract class for an editable input field.
@@ -82,8 +89,8 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
   /** Key down event data. */
   private onKeyDownWrapper: browserEvents.Data | null = null;
 
-  /** Key input event data. */
-  private onKeyInputWrapper: browserEvents.Data | null = null;
+  /** Input element input event data. */
+  private onInputWrapper: browserEvents.Data | null = null;
 
   /**
    * Whether the field should consider the whole parent block to be its click
@@ -100,8 +107,23 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
    */
   override SERIALIZABLE = true;
 
-  /** Mouse cursor style when over the hotspot that initiates the editor. */
-  override CURSOR = 'text';
+  protected override set size_(newValue: Size) {
+    // Although this appears to be a no-op, it must exist since the getter is
+    // overridden below.
+    super.size_ = newValue;
+  }
+
+  /**
+   * Returns the size of this field, with a minimum width of 14.
+   */
+  protected override get size_() {
+    const s = super.size_;
+    if (s.width < MINIMUM_WIDTH) {
+      s.width = MINIMUM_WIDTH;
+    }
+
+    return s;
+  }
 
   /**
    * @param value The initial value of the field. Should cast to a string.
@@ -149,9 +171,13 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
     if (this.isFullBlockField()) {
       this.clickTarget_ = (this.sourceBlock_ as BlockSvg).getSvgRoot();
     }
+
+    if (this.fieldGroup_) {
+      dom.addClass(this.fieldGroup_, 'blocklyInputField');
+    }
   }
 
-  protected override isFullBlockField(): boolean {
+  override isFullBlockField(): boolean {
     const block = this.getSourceBlock();
     if (!block) throw new UnattachedFieldError();
 
@@ -330,8 +356,16 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
    *     undefined if triggered programmatically.
    * @param quietInput True if editor should be created without focus.
    *     Defaults to false.
+   * @param manageEphemeralFocus Whether ephemeral focus should be managed as
+   *     part of the editor's inline editor (when the inline editor is shown).
+   *     Callers must manage ephemeral focus themselves if this is false.
+   *     Defaults to true.
    */
-  protected override showEditor_(_e?: Event, quietInput = false) {
+  protected override showEditor_(
+    _e?: Event,
+    quietInput = false,
+    manageEphemeralFocus: boolean = true,
+  ) {
     this.workspace_ = (this.sourceBlock_ as BlockSvg).workspace;
     if (
       !quietInput &&
@@ -340,7 +374,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
     ) {
       this.showPromptEditor();
     } else {
-      this.showInlineEditor(quietInput);
+      this.showInlineEditor(quietInput, manageEphemeralFocus);
     }
   }
 
@@ -367,8 +401,10 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
    * Create and show a text input editor that sits directly over the text input.
    *
    * @param quietInput True if editor should be created without focus.
+   * @param manageEphemeralFocus Whether ephemeral focus should be managed as
+   *     part of the field's inline editor (widget div).
    */
-  private showInlineEditor(quietInput: boolean) {
+  private showInlineEditor(quietInput: boolean, manageEphemeralFocus: boolean) {
     const block = this.getSourceBlock();
     if (!block) {
       throw new UnattachedFieldError();
@@ -378,6 +414,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
       block.RTL,
       this.widgetDispose_.bind(this),
       this.workspace_,
+      manageEphemeralFocus,
     );
     this.htmlInput_ = this.widgetCreate_() as HTMLInputElement;
     this.isBeingEdited_ = true;
@@ -406,7 +443,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
 
     const clickTarget = this.getClickTarget_();
     if (!clickTarget) throw new Error('A click target has not been set.');
-    dom.addClass(clickTarget, 'editing');
+    dom.addClass(clickTarget, 'blocklyEditing');
 
     const htmlInput = document.createElement('input');
     htmlInput.className = 'blocklyHtmlInput';
@@ -416,7 +453,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
       'spellcheck',
       this.spellcheck_ as AnyDuringMigration,
     );
-    const scale = this.workspace_!.getScale();
+    const scale = this.workspace_!.getAbsoluteScale();
     const fontSize = this.getConstants()!.FIELD_TEXT_FONTSIZE * scale + 'pt';
     div!.style.fontSize = fontSize;
     htmlInput.style.fontSize = fontSize;
@@ -501,7 +538,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
 
     const clickTarget = this.getClickTarget_();
     if (!clickTarget) throw new Error('A click target has not been set.');
-    dom.removeClass(clickTarget, 'editing');
+    dom.removeClass(clickTarget, 'blocklyEditing');
   }
 
   /**
@@ -525,7 +562,7 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
       this.onHtmlInputKeyDown_,
     );
     // Resize after every input change.
-    this.onKeyInputWrapper = browserEvents.conditionalBind(
+    this.onInputWrapper = browserEvents.conditionalBind(
       htmlInput,
       'input',
       this,
@@ -539,9 +576,9 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
       browserEvents.unbind(this.onKeyDownWrapper);
       this.onKeyDownWrapper = null;
     }
-    if (this.onKeyInputWrapper) {
-      browserEvents.unbind(this.onKeyInputWrapper);
-      this.onKeyInputWrapper = null;
+    if (this.onInputWrapper) {
+      browserEvents.unbind(this.onInputWrapper);
+      this.onInputWrapper = null;
     }
   }
 
@@ -562,17 +599,42 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
       WidgetDiv.hideIfOwner(this);
       dropDownDiv.hideWithoutAnimation();
     } else if (e.key === 'Tab') {
-      WidgetDiv.hideIfOwner(this);
-      dropDownDiv.hideWithoutAnimation();
-      (this.sourceBlock_ as BlockSvg).tab(this, !e.shiftKey);
       e.preventDefault();
+      const cursor = this.workspace_?.getCursor();
+
+      const isValidDestination = (node: IFocusableNode | null) =>
+        (node instanceof FieldInput ||
+          (node instanceof BlockSvg && node.isSimpleReporter())) &&
+        node !== this.getSourceBlock();
+
+      let target = e.shiftKey
+        ? cursor?.getPreviousNode(this, isValidDestination, false)
+        : cursor?.getNextNode(this, isValidDestination, false);
+      target =
+        target instanceof BlockSvg && target.isSimpleReporter()
+          ? target.getFields().next().value
+          : target;
+
+      if (target instanceof FieldInput) {
+        WidgetDiv.hideIfOwner(this);
+        dropDownDiv.hideWithoutAnimation();
+        const targetSourceBlock = target.getSourceBlock();
+        if (
+          target.isFullBlockField() &&
+          targetSourceBlock &&
+          targetSourceBlock instanceof BlockSvg
+        ) {
+          getFocusManager().focusNode(targetSourceBlock);
+        } else getFocusManager().focusNode(target);
+        target.showEditor();
+      }
     }
   }
 
   /**
    * Handle a change to the editor.
    *
-   * @param _e Keyboard event.
+   * @param _e InputEvent.
    */
   private onHtmlInputChange(_e: Event) {
     // Intermediate value changes from user input are not confirmed until the
@@ -674,12 +736,20 @@ export abstract class FieldInput<T extends InputTypes> extends Field<
   }
 
   /**
-   * Returns whether or not the field is tab navigable.
+   * Position a field's text element after a size change.  This handles both LTR
+   * and RTL positioning.
    *
-   * @returns True if the field is tab navigable.
+   * @param xMargin x offset to use when positioning the text element.
+   * @param contentWidth The content width.
    */
-  override isTabNavigable(): boolean {
-    return true;
+  protected override positionTextElement_(
+    xMargin: number,
+    contentWidth: number,
+  ) {
+    const effectiveWidth = xMargin * 2 + contentWidth;
+    const delta =
+      effectiveWidth < MINIMUM_WIDTH ? (MINIMUM_WIDTH - effectiveWidth) / 2 : 0;
+    super.positionTextElement_(xMargin + delta, contentWidth);
   }
 
   /**

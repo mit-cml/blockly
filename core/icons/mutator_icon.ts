@@ -118,7 +118,7 @@ export class MutatorIcon extends Icon implements IHasBubble {
       {'class': 'blocklyIconShape', 'r': '2.7', 'cx': '8', 'cy': '8'},
       this.svgRoot,
     );
-    dom.addClass(this.svgRoot!, 'blockly-icon-mutator');
+    dom.addClass(this.svgRoot!, 'blocklyMutatorIcon');
   }
 
   override dispose(): void {
@@ -201,6 +201,11 @@ export class MutatorIcon extends Icon implements IHasBubble {
         'mutator',
       ),
     );
+  }
+
+  /** See IHasBubble.getBubble. */
+  getBubble(): MiniWorkspaceBubble | null {
+    return this.miniWorkspaceBubble;
   }
 
   /** @returns the configuration the mini workspace should have. */

@@ -7,11 +7,14 @@
 // Former goog.module ID: Blockly.common
 
 import type {Block} from './block.js';
-import {ISelectable} from './blockly.js';
 import {BlockDefinition, Blocks} from './blocks.js';
+import * as browserEvents from './browser_events.js';
 import type {Connection} from './connection.js';
 import {EventType} from './events/type.js';
 import * as eventUtils from './events/utils.js';
+import {getFocusManager} from './focus_manager.js';
+import {ISelectable, isSelectable} from './interfaces/i_selectable.js';
+import {ShortcutRegistry} from './shortcut_registry.js';
 import type {Workspace} from './workspace.js';
 import type {WorkspaceSvg} from './workspace_svg.js';
 
@@ -86,38 +89,45 @@ export function setMainWorkspace(workspace: Workspace) {
 }
 
 /**
- * Currently selected copyable object.
- */
-let selected: ISelectable | null = null;
-
-/**
- * Returns the currently selected copyable object.
+ * Returns the current selection.
  */
 export function getSelected(): ISelectable | null {
-  return selected;
+  const focused = getFocusManager().getFocusedNode();
+  if (focused && isSelectable(focused)) return focused;
+  return null;
 }
 
 /**
- * Sets the currently selected block. This function does not visually mark the
- * block as selected or fire the required events. If you wish to
- * programmatically select a block, use `BlockSvg#select`.
+ * Sets the current selection.
  *
- * @param newSelection The newly selected block.
+ * To clear the current selection, select another ISelectable or focus a
+ * non-selectable (like the workspace root node).
+ *
+ * @param newSelection The new selection to make.
  * @internal
  */
-export function setSelected(newSelection: ISelectable | null) {
-  if (selected === newSelection) return;
+export function setSelected(newSelection: ISelectable) {
+  getFocusManager().focusNode(newSelection);
+}
 
+/**
+ * Fires a selection change event based on the new selection.
+ *
+ * This is only expected to be called by ISelectable implementations and should
+ * always be called before updating the current selection state. It does not
+ * change focus or selection state.
+ *
+ * @param newSelection The new selection.
+ * @internal
+ */
+export function fireSelectedEvent(newSelection: ISelectable | null) {
+  const selected = getSelected();
   const event = new (eventUtils.get(EventType.SELECTED))(
     selected?.id ?? null,
     newSelection?.id ?? null,
     newSelection?.workspace.id ?? selected?.workspace.id ?? '',
   );
   eventUtils.fire(event);
-
-  selected?.unselect();
-  selected = newSelection;
-  selected?.select();
 }
 
 /**
@@ -300,6 +310,38 @@ export function defineBlocks(blocks: {[key: string]: BlockDefinition}) {
     }
     Blocks[type] = definition;
   }
+}
+
+/**
+ * Handle a key-down on SVG drawing surface. Does nothing if the main workspace
+ * is not visible.
+ *
+ * @internal
+ * @param e Key down event.
+ */
+export function globalShortcutHandler(e: KeyboardEvent) {
+  // This would ideally just be a `focusedTree instanceof WorkspaceSvg`, but
+  // importing `WorkspaceSvg` (as opposed to just its type) causes cycles.
+  let workspace: WorkspaceSvg = getMainWorkspace() as WorkspaceSvg;
+  const focusedTree = getFocusManager().getFocusedTree();
+  for (const ws of getAllWorkspaces()) {
+    if (focusedTree === (ws as WorkspaceSvg)) {
+      workspace = ws as WorkspaceSvg;
+      break;
+    }
+  }
+
+  if (
+    browserEvents.isTargetInput(e) ||
+    !workspace ||
+    (workspace.rendered && !workspace.isFlyout && !workspace.isVisible())
+  ) {
+    // When focused on an HTML text input widget, don't trap any keys.
+    // Ignore keypresses on rendered workspaces that have been explicitly
+    // hidden.
+    return;
+  }
+  ShortcutRegistry.registry.onKeyDown(workspace, e);
 }
 
 export const TEST_ONLY = {defineBlocksWithJsonArrayInternal};

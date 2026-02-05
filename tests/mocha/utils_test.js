@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {assert} from '../../node_modules/chai/chai.js';
+import {assert} from '../../node_modules/chai/index.js';
 import {
   sharedTestSetup,
   sharedTestTeardown,
@@ -531,6 +531,27 @@ suite('Utils', function () {
       assert.equal(Blockly.utils.math.toDegrees(3 * quarter), 270, '270');
       assert.equal(Blockly.utils.math.toDegrees(4 * quarter), 360, '360');
       assert.equal(Blockly.utils.math.toDegrees(5 * quarter), 360 + 90, '450');
+    });
+  });
+
+  suite('deepMerge', function () {
+    test('Merges two objects', function () {
+      const target = {a: 1, b: '2', shared: 'this should be overwritten'};
+      const source = {c: {deeplyNested: true}, shared: 'I overwrote it'};
+
+      const expected = {...target, ...source};
+      const actual = Blockly.utils.object.deepMerge(target, source);
+
+      assert.deepEqual(expected, actual);
+    });
+    test('Merges objects with arrays', function () {
+      const target = {a: 1};
+      const source = {b: ['orange', 'lime']};
+
+      const expected = {...target, ...source};
+      const actual = Blockly.utils.object.deepMerge(target, source);
+
+      assert.deepEqual(expected, actual);
     });
   });
 });

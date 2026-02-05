@@ -25,11 +25,13 @@ import * as dropDownDiv from './dropdowndiv.js';
 import {EventType} from './events/type.js';
 import * as eventUtils from './events/utils.js';
 import type {Field} from './field.js';
+import {getFocusManager} from './focus_manager.js';
 import type {IBubble} from './interfaces/i_bubble.js';
 import {IDraggable, isDraggable} from './interfaces/i_draggable.js';
 import {IDragger} from './interfaces/i_dragger.js';
 import type {IFlyout} from './interfaces/i_flyout.js';
 import type {IIcon} from './interfaces/i_icon.js';
+import {keyboardNavigationController} from './keyboard_navigation_controller.js';
 import * as registry from './registry.js';
 import * as Tooltip from './tooltip.js';
 import * as Touch from './touch.js';
@@ -289,7 +291,7 @@ export class Gesture {
       // The start block is no longer relevant, because this is a drag.
       this.startBlock = null;
       this.targetBlock = this.flyout.createBlock(this.targetBlock);
-      common.setSelected(this.targetBlock);
+      getFocusManager().focusNode(this.targetBlock);
       return true;
     }
     return false;
@@ -465,6 +467,15 @@ export class Gesture {
         /* opt_noCaptureIdentifier */ true,
       ),
     );
+    this.boundEvents.push(
+      browserEvents.conditionalBind(
+        document,
+        'pointercancel',
+        null,
+        this.handleUp.bind(this),
+        /* opt_noCaptureIdentifier */ true,
+      ),
+    );
 
     e.preventDefault();
     e.stopPropagation();
@@ -540,8 +551,10 @@ export class Gesture {
       // have higher priority than workspaces. The ordering within drags does
       // not matter, because the three types of dragging are exclusive.
       if (this.dragger) {
+        keyboardNavigationController.setIsActive(false);
         this.dragger.onDragEnd(e, this.currentDragDeltaXY);
       } else if (this.workspaceDragger) {
+        keyboardNavigationController.setIsActive(false);
         this.workspaceDragger.endDrag(this.currentDragDeltaXY);
       } else if (this.isBubbleClick()) {
         // Do nothing, bubbles don't currently respond to clicks.
@@ -734,12 +747,15 @@ export class Gesture {
       this.startComment.showContextMenu(e);
     } else if (this.startWorkspace_ && !this.flyout) {
       this.startWorkspace_.hideChaff();
+      getFocusManager().focusNode(this.startWorkspace_);
       this.startWorkspace_.showContextMenu(e);
     }
 
     // TODO: Handle right-click on a bubble.
     e.preventDefault();
     e.stopPropagation();
+
+    keyboardNavigationController.setIsActive(false);
 
     this.dispose();
   }
@@ -762,9 +778,12 @@ export class Gesture {
     this.mostRecentEvent = e;
 
     if (!this.startBlock && !this.startBubble && !this.startComment) {
-      // Selection determines what things start drags. So to drag the workspace,
-      // we need to deselect anything that was previously selected.
-      common.setSelected(null);
+      // Ensure the workspace is selected if nothing else should be. Note that
+      // this is focusNode() instead of focusTree() because if any active node
+      // is focused in the workspace it should be defocused.
+      getFocusManager().focusNode(ws);
+    } else if (this.startBlock) {
+      getFocusManager().focusNode(this.startBlock);
     }
 
     this.doStart(e);
@@ -865,13 +884,18 @@ export class Gesture {
       );
     }
 
+    // Note that the order is important here: bringing a block to the front will
+    // cause it to become focused and showing the field editor will capture
+    // focus ephemerally. It's important to ensure that focus is properly
+    // restored back to the block after field editing has completed.
+    this.bringBlockToFront();
+
     // Only show the editor if the field's editor wasn't already open
     // right before this gesture started.
     const dropdownAlreadyOpen = this.currentDropdownOwner === this.startField;
     if (!dropdownAlreadyOpen) {
       this.startField.showEditor(this.mostRecentEvent);
     }
-    this.bringBlockToFront();
   }
 
   /** Execute an icon click. */
@@ -894,13 +918,16 @@ export class Gesture {
           'Cannot do a block click because the target block is ' + 'undefined',
         );
       }
-      if (this.targetBlock.isEnabled()) {
+      if (this.flyout.isBlockCreatable(this.targetBlock)) {
         if (!eventUtils.getGroup()) {
           eventUtils.setGroup(true);
         }
         const newBlock = this.flyout.createBlock(this.targetBlock);
         newBlock.snapToGrid();
         newBlock.bumpNeighbours();
+
+        // If a new block was added, make sure that it's correctly focused.
+        getFocusManager().focusNode(newBlock);
       }
     } else {
       if (!this.startWorkspace_) {
@@ -928,11 +955,7 @@ export class Gesture {
    * @param _e A pointerup event.
    */
   private doWorkspaceClick(_e: PointerEvent) {
-    const ws = this.creatorWorkspace;
-    if (common.getSelected()) {
-      common.getSelected()!.unselect();
-    }
-    this.fireWorkspaceClick(this.startWorkspace_ || ws);
+    this.fireWorkspaceClick(this.startWorkspace_ || this.creatorWorkspace);
   }
 
   /* End functions defining what actions to take to execute clicks on each type
@@ -947,6 +970,8 @@ export class Gesture {
   private bringBlockToFront() {
     // Blocks in the flyout don't overlap, so skip the work.
     if (this.targetBlock && !this.flyout) {
+      // Always ensure the block being dragged/clicked has focus.
+      getFocusManager().focusNode(this.targetBlock);
       this.targetBlock.bringToFront();
     }
   }
@@ -1023,7 +1048,6 @@ export class Gesture {
     // If the gesture already went through a bubble, don't set the start block.
     if (!this.startBlock && !this.startBubble) {
       this.startBlock = block;
-      common.setSelected(this.startBlock);
       if (block.isInFlyout && block !== block.getRootBlock()) {
         this.setTargetBlock(block.getRootBlock());
       } else {
@@ -1046,6 +1070,7 @@ export class Gesture {
       this.setTargetBlock(block.getParent()!);
     } else {
       this.targetBlock = block;
+      getFocusManager().focusNode(block);
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "blockly",
-  "version": "11.2.2-mit-appinventor.1",
+  "version": "12.3.1",
   "description": "Blockly is a library for building visual programming editors.",
   "keywords": [
     "blockly"
@@ -33,7 +33,7 @@
     "lint:fix": "eslint . --fix",
     "langfiles": "gulp langfiles",
     "minify": "gulp minify",
-    "package": "gulp package",
+    "package": "gulp pack",
     "postinstall": "patch-package",
     "prepareDemos": "gulp prepareDemos",
     "publish": "npm ci && gulp publish",
@@ -45,7 +45,7 @@
     "test": "gulp test",
     "test:browser": "cd tests/browser && npx mocha",
     "test:generators": "gulp testGenerators",
-    "test:mocha:interactive": "npm run build && concurrently -n tsc,server \"tsc --watch --preserveWatchOutput --outDir \"build/src\" --declarationDir \"build/declarations\"\" \"http-server ./ -o /tests/mocha/index.html -c-1\"",
+    "test:mocha:interactive": "npm run build && concurrently -n tsc,server \"tsc --watch --preserveWatchOutput --outDir \"build/src\" --declarationDir \"build/declarations\"\" \"gulp interactiveMocha\"",
     "test:compile:advanced": "gulp buildAdvancedCompilationTest --debug",
     "updateGithubPages": "npm ci && gulp gitUpdateGithubPages"
   },
@@ -100,24 +100,27 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@blockly/block-test": "^6.0.4",
-    "@blockly/dev-tools": "^8.0.6",
-    "@blockly/theme-modern": "^6.0.3",
+    "@blockly/block-test": "^7.0.2",
+    "@blockly/dev-tools": "^9.0.2",
+    "@blockly/keyboard-navigation": "^3.0.1",
+    "@blockly/theme-modern": "^7.0.1",
     "@hyperjump/browser": "^1.1.4",
     "@hyperjump/json-schema": "^1.5.0",
-    "@microsoft/api-documenter": "^7.22.4",
+    "@microsoft/api-documenter": "7.22.4",
     "@microsoft/api-extractor": "^7.29.5",
+    "ajv": "^8.17.1",
     "async-done": "^2.0.0",
-    "chai": "^5.1.1",
+    "chai": "^6.0.1",
     "concurrently": "^9.0.1",
     "eslint": "^9.15.0",
     "eslint-config-google": "^0.14.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-jsdoc": "^50.5.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-plugin-jsdoc": "^52.0.2",
+    "eslint-plugin-mocha": "^11.1.0",
     "eslint-plugin-prettier": "^5.2.1",
     "glob": "^11.0.1",
-    "globals": "^15.12.0",
-    "google-closure-compiler": "^20240317.0.0",
+    "globals": "^16.0.0",
+    "google-closure-compiler": "^20250709.0.0",
     "gulp": "^5.0.0",
     "gulp-concat": "^2.6.1",
     "gulp-gzip": "^1.4.2",
@@ -132,10 +135,11 @@
     "http-server": "^14.0.0",
     "json5": "^2.2.0",
     "markdown-tables-to-json": "^0.1.7",
-    "mocha": "^10.0.0",
+    "mocha": "^11.3.0",
     "patch-package": "^8.0.0",
     "prettier": "^3.3.3",
     "prettier-plugin-organize-imports": "^4.0.0",
+    "puppeteer-core": "^24.17.0",
     "readline-sync": "^1.4.10",
     "rimraf": "^5.0.0",
     "typescript": "^5.3.3",
@@ -144,7 +148,7 @@
     "yargs": "^17.2.1"
   },
   "dependencies": {
-    "jsdom": "25.0.1"
+    "jsdom": "26.1.0"
   },
   "engines": {
     "node": ">=18"

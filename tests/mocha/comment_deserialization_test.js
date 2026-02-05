@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {assert} from '../../node_modules/chai/chai.js';
+import {assert} from '../../node_modules/chai/index.js';
 import {
   sharedTestSetup,
   sharedTestTeardown,
@@ -110,7 +110,7 @@ suite('Comment Deserialization', function () {
     test('Toolbox', function () {
       // Place from toolbox.
       const toolbox = this.workspace.getToolbox();
-      simulateClick(toolbox.HtmlDiv.querySelector('.blocklyTreeRow'));
+      simulateClick(toolbox.HtmlDiv.querySelector('.blocklyToolboxCategory'));
       simulateClick(
         toolbox.getFlyout().svgGroup_.querySelector('.blocklyPath'),
       );

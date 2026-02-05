@@ -6,6 +6,7 @@
 
 import * as browserEvents from '../browser_events.js';
 import * as css from '../css.js';
+import type {IFocusableNode} from '../interfaces/i_focusable_node';
 import {IRenderedElement} from '../interfaces/i_rendered_element.js';
 import * as layers from '../layers.js';
 import * as touch from '../touch.js';
@@ -15,13 +16,17 @@ import * as drag from '../utils/drag.js';
 import {Size} from '../utils/size.js';
 import {Svg} from '../utils/svg.js';
 import {WorkspaceSvg} from '../workspace_svg.js';
+import {CollapseCommentBarButton} from './collapse_comment_bar_button.js';
+import {CommentBarButton} from './comment_bar_button.js';
+import {CommentEditor} from './comment_editor.js';
+import {DeleteCommentBarButton} from './delete_comment_bar_button.js';
 
 export class CommentView implements IRenderedElement {
   /** The root group element of the comment view. */
   private svgRoot: SVGGElement;
 
   /**
-   * The svg rect element that we use to create a hightlight around the comment.
+   * The SVG rect element that we use to create a highlight around the comment.
    */
   private highlightRect: SVGRectElement;
 
@@ -31,11 +36,11 @@ export class CommentView implements IRenderedElement {
   /** The rect background for the top bar. */
   private topBarBackground: SVGRectElement;
 
-  /** The delete icon that goes in the top bar. */
-  private deleteIcon: SVGImageElement;
+  /** The delete button that goes in the top bar. */
+  private deleteButton: DeleteCommentBarButton;
 
-  /** The foldout icon that goes in the top bar. */
-  private foldoutIcon: SVGImageElement;
+  /** The foldout button that goes in the top bar. */
+  private foldoutButton: CollapseCommentBarButton;
 
   /** The text element that goes in the top bar. */
   private textPreview: SVGTextElement;
@@ -46,14 +51,11 @@ export class CommentView implements IRenderedElement {
   /** The resize handle element. */
   private resizeHandle: SVGImageElement;
 
-  /** The foreignObject containing the HTML text area. */
-  private foreignObject: SVGForeignObjectElement;
-
-  /** The text area where the user can type. */
-  private textArea: HTMLTextAreaElement;
+  /** The part of the comment view that contains the textarea to edit the comment. */
+  private commentEditor: CommentEditor;
 
   /** The current size of the comment in workspace units. */
-  private size: Size = new Size(120, 100);
+  private size: Size;
 
   /** Whether the comment is collapsed or not. */
   private collapsed: boolean = false;
@@ -63,14 +65,6 @@ export class CommentView implements IRenderedElement {
 
   /** The current location of the comment in workspace coordinates. */
   private location: Coordinate = new Coordinate(0, 0);
-
-  /** The current text of the comment. Updates on  text area change. */
-  private text: string = '';
-
-  /** Listeners for changes to text. */
-  private textChangeListeners: Array<
-    (oldText: string, newText: string) => void
-  > = [];
 
   /** Listeners for changes to size. */
   private sizeChangeListeners: Array<(oldSize: Size, newSize: Size) => void> =
@@ -95,15 +89,21 @@ export class CommentView implements IRenderedElement {
   private resizePointerMoveListener: browserEvents.Data | null = null;
 
   /** Whether this comment view is currently being disposed or not. */
-  private disposing = false;
+  protected disposing = false;
 
   /** Whether this comment view has been disposed or not. */
-  private disposed = false;
+  protected disposed = false;
 
   /** Size of this comment when the resize drag was initiated. */
   private preResizeSize?: Size;
 
-  constructor(private readonly workspace: WorkspaceSvg) {
+  /** The default size of newly created comments. */
+  static defaultCommentSize = new Size(120, 100);
+
+  constructor(
+    readonly workspace: WorkspaceSvg,
+    readonly commentId: string,
+  ) {
     this.svgRoot = dom.createSvgElement(Svg.G, {
       'class': 'blocklyComment blocklyEditable blocklyDraggable',
     });
@@ -113,14 +113,13 @@ export class CommentView implements IRenderedElement {
     ({
       topBarGroup: this.topBarGroup,
       topBarBackground: this.topBarBackground,
-      deleteIcon: this.deleteIcon,
-      foldoutIcon: this.foldoutIcon,
+      deleteButton: this.deleteButton,
+      foldoutButton: this.foldoutButton,
       textPreview: this.textPreview,
       textPreviewNode: this.textPreviewNode,
-    } = this.createTopBar(this.svgRoot, workspace));
+    } = this.createTopBar(this.svgRoot));
 
-    ({foreignObject: this.foreignObject, textArea: this.textArea} =
-      this.createTextArea(this.svgRoot));
+    this.commentEditor = this.createTextArea();
 
     this.resizeHandle = this.createResizeHandle(this.svgRoot, workspace);
 
@@ -129,6 +128,7 @@ export class CommentView implements IRenderedElement {
     workspace.getLayerManager()?.append(this, layers.BLOCK);
 
     // Set size to the default size.
+    this.size = CommentView.defaultCommentSize;
     this.setSizeWithoutFiringEvents(this.size);
 
     // Set default transform (including inverted scale for RTL).
@@ -150,14 +150,11 @@ export class CommentView implements IRenderedElement {
    * Creates the top bar and the elements visually within it.
    * Registers event listeners.
    */
-  private createTopBar(
-    svgRoot: SVGGElement,
-    workspace: WorkspaceSvg,
-  ): {
+  private createTopBar(svgRoot: SVGGElement): {
     topBarGroup: SVGGElement;
     topBarBackground: SVGRectElement;
-    deleteIcon: SVGImageElement;
-    foldoutIcon: SVGImageElement;
+    deleteButton: DeleteCommentBarButton;
+    foldoutButton: CollapseCommentBarButton;
     textPreview: SVGTextElement;
     textPreviewNode: Text;
   } {
@@ -175,24 +172,22 @@ export class CommentView implements IRenderedElement {
       },
       topBarGroup,
     );
-    // TODO: Before merging, does this mean to override an individual image,
-    // folks need to replace the whole media folder?
-    const deleteIcon = dom.createSvgElement(
-      Svg.IMAGE,
-      {
-        'class': 'blocklyDeleteIcon',
-        'href': `${workspace.options.pathToMedia}delete-icon.svg`,
-      },
+    const deleteButton = new DeleteCommentBarButton(
+      this.commentId,
+      this.workspace,
       topBarGroup,
+      this,
     );
-    const foldoutIcon = dom.createSvgElement(
-      Svg.IMAGE,
-      {
-        'class': 'blocklyFoldoutIcon',
-        'href': `${workspace.options.pathToMedia}foldout-icon.svg`,
-      },
+    const foldoutButton = new CollapseCommentBarButton(
+      this.commentId,
+      this.workspace,
       topBarGroup,
+      this,
     );
+    this.addDisposeListener(() => {
+      deleteButton.dispose();
+      foldoutButton.dispose();
+    });
     const textPreview = dom.createSvgElement(
       Svg.TEXT,
       {
@@ -203,27 +198,11 @@ export class CommentView implements IRenderedElement {
     const textPreviewNode = document.createTextNode('');
     textPreview.appendChild(textPreviewNode);
 
-    // TODO(toychest): Triggering this on pointerdown means that we can't start
-    //   drags on the foldout icon. We need to open up the gesture system
-    //   to fix this.
-    browserEvents.conditionalBind(
-      foldoutIcon,
-      'pointerdown',
-      this,
-      this.onFoldoutDown,
-    );
-    browserEvents.conditionalBind(
-      deleteIcon,
-      'pointerdown',
-      this,
-      this.onDeleteDown,
-    );
-
     return {
       topBarGroup,
       topBarBackground,
-      deleteIcon,
-      foldoutIcon,
+      deleteButton,
+      foldoutButton,
       textPreview,
       textPreviewNode,
     };
@@ -232,33 +211,32 @@ export class CommentView implements IRenderedElement {
   /**
    * Creates the text area where users can type. Registers event listeners.
    */
-  private createTextArea(svgRoot: SVGGElement): {
-    foreignObject: SVGForeignObjectElement;
-    textArea: HTMLTextAreaElement;
-  } {
-    const foreignObject = dom.createSvgElement(
-      Svg.FOREIGNOBJECT,
-      {
-        'class': 'blocklyCommentForeignObject',
-      },
-      svgRoot,
+  private createTextArea() {
+    // When the user is done editing comment, focus the entire comment.
+    const onFinishEditing = () => this.svgRoot.focus();
+    const commentEditor = new CommentEditor(
+      this.workspace,
+      this.commentId,
+      onFinishEditing,
     );
-    const body = document.createElementNS(dom.HTML_NS, 'body');
-    body.setAttribute('xmlns', dom.HTML_NS);
-    body.className = 'blocklyMinimalBody';
-    const textArea = document.createElementNS(
-      dom.HTML_NS,
-      'textarea',
-    ) as HTMLTextAreaElement;
-    dom.addClass(textArea, 'blocklyCommentText');
-    dom.addClass(textArea, 'blocklyTextarea');
-    dom.addClass(textArea, 'blocklyText');
-    body.appendChild(textArea);
-    foreignObject.appendChild(body);
 
-    browserEvents.conditionalBind(textArea, 'change', this, this.onTextChange);
+    this.svgRoot.appendChild(commentEditor.getDom());
 
-    return {foreignObject, textArea};
+    commentEditor.addTextChangeListener((oldText, newText) => {
+      this.updateTextPreview(newText);
+      // Update size in case our minimum size increased.
+      this.setSize(this.size);
+    });
+
+    return commentEditor;
+  }
+
+  /**
+   *
+   * @returns The FocusableNode representing the editor portion of this comment.
+   */
+  getEditorFocusableNode(): IFocusableNode {
+    return this.commentEditor;
   }
 
   /** Creates the DOM elements for the comment resize handle. */
@@ -304,15 +282,10 @@ export class CommentView implements IRenderedElement {
    */
   setSizeWithoutFiringEvents(size: Size) {
     const topBarSize = this.topBarBackground.getBBox();
-    const deleteSize = this.deleteIcon.getBBox();
-    const foldoutSize = this.foldoutIcon.getBBox();
     const textPreviewSize = this.textPreview.getBBox();
     const resizeSize = this.resizeHandle.getBBox();
 
-    size = Size.max(
-      size,
-      this.calcMinSize(topBarSize, foldoutSize, deleteSize),
-    );
+    size = Size.max(size, this.calcMinSize(topBarSize));
     this.size = size;
 
     this.svgRoot.setAttribute('height', `${size.height}`);
@@ -320,16 +293,10 @@ export class CommentView implements IRenderedElement {
 
     this.updateHighlightRect(size);
     this.updateTopBarSize(size);
-    this.updateTextAreaSize(size, topBarSize);
-    this.updateDeleteIconPosition(size, topBarSize, deleteSize);
-    this.updateFoldoutIconPosition(topBarSize, foldoutSize);
-    this.updateTextPreviewSize(
-      size,
-      topBarSize,
-      textPreviewSize,
-      deleteSize,
-      resizeSize,
-    );
+    this.commentEditor.updateSize(size, topBarSize);
+    this.deleteButton.reposition();
+    this.foldoutButton.reposition();
+    this.updateTextPreviewSize(size, topBarSize, textPreviewSize);
     this.updateResizeHandlePosition(size, resizeSize);
   }
 
@@ -351,25 +318,18 @@ export class CommentView implements IRenderedElement {
    *
    * The minimum height is based on the height of the top bar.
    */
-  private calcMinSize(
-    topBarSize: Size,
-    foldoutSize: Size,
-    deleteSize: Size,
-  ): Size {
-    this.updateTextPreview(this.textArea.value ?? '');
+  private calcMinSize(topBarSize: Size): Size {
+    this.updateTextPreview(this.commentEditor.getText() ?? '');
     const textPreviewWidth = dom.getTextWidth(this.textPreview);
 
-    const foldoutMargin = this.calcFoldoutMargin(topBarSize, foldoutSize);
-    const deleteMargin = this.calcDeleteMargin(topBarSize, deleteSize);
-
     let width = textPreviewWidth;
-    if (this.foldoutIcon.checkVisibility()) {
-      width += foldoutSize.width + foldoutMargin * 2;
+    if (this.foldoutButton.isVisible()) {
+      width += this.foldoutButton.getSize(true).getWidth();
     } else if (textPreviewWidth) {
       width += 4; // Arbitrary margin before text.
     }
-    if (this.deleteIcon.checkVisibility()) {
-      width += deleteSize.width + deleteMargin * 2;
+    if (this.deleteButton.isVisible()) {
+      width += this.deleteButton.getSize(true).getWidth();
     } else if (textPreviewWidth) {
       width += 4; // Arbitrary margin after text.
     }
@@ -378,16 +338,6 @@ export class CommentView implements IRenderedElement {
     const height = topBarSize.height + 20;
 
     return new Size(width, height);
-  }
-
-  /** Calculates the margin that should exist around the delete icon. */
-  private calcDeleteMargin(topBarSize: Size, deleteSize: Size) {
-    return (topBarSize.height - deleteSize.height) / 2;
-  }
-
-  /** Calculates the margin that should exist around the foldout icon. */
-  private calcFoldoutMargin(topBarSize: Size, foldoutSize: Size) {
-    return (topBarSize.height - foldoutSize.height) / 2;
   }
 
   /** Updates the size of the highlight rect to reflect the new size. */
@@ -404,44 +354,6 @@ export class CommentView implements IRenderedElement {
     this.topBarBackground.setAttribute('width', `${size.width}`);
   }
 
-  /** Updates the size of the text area elements to reflect the new size. */
-  private updateTextAreaSize(size: Size, topBarSize: Size) {
-    this.foreignObject.setAttribute(
-      'height',
-      `${size.height - topBarSize.height}`,
-    );
-    this.foreignObject.setAttribute('width', `${size.width}`);
-    this.foreignObject.setAttribute('y', `${topBarSize.height}`);
-    if (this.workspace.RTL) {
-      this.foreignObject.setAttribute('x', `${-size.width}`);
-    }
-  }
-
-  /**
-   * Updates the position of the delete icon elements to reflect the new size.
-   */
-  private updateDeleteIconPosition(
-    size: Size,
-    topBarSize: Size,
-    deleteSize: Size,
-  ) {
-    const deleteMargin = this.calcDeleteMargin(topBarSize, deleteSize);
-    this.deleteIcon.setAttribute('y', `${deleteMargin}`);
-    this.deleteIcon.setAttribute(
-      'x',
-      `${size.width - deleteSize.width - deleteMargin}`,
-    );
-  }
-
-  /**
-   * Updates the position of the foldout icon elements to reflect the new size.
-   */
-  private updateFoldoutIconPosition(topBarSize: Size, foldoutSize: Size) {
-    const foldoutMargin = this.calcFoldoutMargin(topBarSize, foldoutSize);
-    this.foldoutIcon.setAttribute('y', `${foldoutMargin}`);
-    this.foldoutIcon.setAttribute('x', `${foldoutMargin}`);
-  }
-
   /**
    * Updates the size and position of the text preview elements to reflect the new size.
    */
@@ -449,24 +361,16 @@ export class CommentView implements IRenderedElement {
     size: Size,
     topBarSize: Size,
     textPreviewSize: Size,
-    deleteSize: Size,
-    foldoutSize: Size,
   ) {
     const textPreviewMargin = (topBarSize.height - textPreviewSize.height) / 2;
-    const deleteMargin = this.calcDeleteMargin(topBarSize, deleteSize);
-    const foldoutMargin = this.calcFoldoutMargin(topBarSize, foldoutSize);
+    const foldoutSize = this.foldoutButton.getSize(true);
+    const deleteSize = this.deleteButton.getSize(true);
 
     const textPreviewWidth =
-      size.width -
-      foldoutSize.width -
-      foldoutMargin * 2 -
-      deleteSize.width -
-      deleteMargin * 2;
+      size.width - foldoutSize.getWidth() - deleteSize.getWidth();
     this.textPreview.setAttribute(
       'x',
-      `${
-        foldoutSize.width + foldoutMargin * 2 * (this.workspace.RTL ? -1 : 1)
-      }`,
+      `${(this.workspace.RTL ? -1 : 1) * foldoutSize.getWidth()}`,
     );
     this.textPreview.setAttribute(
       'y',
@@ -618,25 +522,6 @@ export class CommentView implements IRenderedElement {
     );
   }
 
-  /**
-   * Toggles the collapsedness of the block when we receive a pointer down
-   * event on the foldout icon.
-   */
-  private onFoldoutDown(e: PointerEvent) {
-    touch.clearTouchIdentifier();
-    this.bringToFront();
-    if (browserEvents.isRightButton(e)) {
-      e.stopPropagation();
-      return;
-    }
-
-    this.setCollapsed(!this.collapsed);
-
-    this.workspace.hideChaff();
-
-    e.stopPropagation();
-  }
-
   /** Returns true if the comment is currently editable. */
   isEditable(): boolean {
     return this.editable;
@@ -648,12 +533,11 @@ export class CommentView implements IRenderedElement {
     if (this.editable) {
       dom.addClass(this.svgRoot, 'blocklyEditable');
       dom.removeClass(this.svgRoot, 'blocklyReadonly');
-      this.textArea.removeAttribute('readonly');
     } else {
       dom.removeClass(this.svgRoot, 'blocklyEditable');
       dom.addClass(this.svgRoot, 'blocklyReadonly');
-      this.textArea.setAttribute('readonly', 'true');
     }
+    this.commentEditor.setEditable(editable);
   }
 
   /** Returns the current location of the comment in workspace coordinates. */
@@ -674,44 +558,29 @@ export class CommentView implements IRenderedElement {
     );
   }
 
-  /** Retursn the current text of the comment. */
+  /** Returns the current text of the comment. */
   getText() {
-    return this.text;
+    return this.commentEditor.getText();
   }
 
   /** Sets the current text of the comment. */
   setText(text: string) {
-    this.textArea.value = text;
-    this.onTextChange();
+    this.commentEditor.setText(text);
   }
 
-  /** Registers a callback that listens for text changes. */
+  /** Sets the placeholder text displayed for an empty comment. */
+  setPlaceholderText(text: string) {
+    this.commentEditor.setPlaceholderText(text);
+  }
+
+  /** Registers a callback that listens for text changes on the comment editor. */
   addTextChangeListener(listener: (oldText: string, newText: string) => void) {
-    this.textChangeListeners.push(listener);
+    this.commentEditor.addTextChangeListener(listener);
   }
 
-  /** Removes the given listener from the list of text change listeners. */
+  /** Removes the given listener from the comment editor. */
   removeTextChangeListener(listener: () => void) {
-    this.textChangeListeners.splice(
-      this.textChangeListeners.indexOf(listener),
-      1,
-    );
-  }
-
-  /**
-   * Triggers listeners when the text of the comment changes, either
-   * programmatically or manually by the user.
-   */
-  private onTextChange() {
-    const oldText = this.text;
-    this.text = this.textArea.value;
-    this.updateTextPreview(this.text);
-    // Update size in case our minimum size increased.
-    this.setSize(this.size);
-    // Loop through listeners backwards in case they remove themselves.
-    for (let i = this.textChangeListeners.length - 1; i >= 0; i--) {
-      this.textChangeListeners[i](oldText, this.text);
-    }
+    this.commentEditor.removeTextChangeListener(listener);
   }
 
   /** Updates the preview text element to reflect the given text. */
@@ -725,7 +594,7 @@ export class CommentView implements IRenderedElement {
   }
 
   /** Brings the workspace comment to the front of its layer. */
-  private bringToFront() {
+  bringToFront() {
     const parent = this.svgRoot.parentNode;
     const childNodes = parent!.childNodes;
     // Avoid moving the comment if it's already at the bottom.
@@ -757,6 +626,7 @@ export class CommentView implements IRenderedElement {
     for (let i = this.disposeListeners.length - 1; i >= 0; i--) {
       this.disposeListeners[i]();
     }
+    this.disposeListeners.length = 0;
     this.disposed = true;
   }
 
@@ -781,6 +651,13 @@ export class CommentView implements IRenderedElement {
   /** Removes the given listener from the list of disposal listeners. */
   removeDisposeListener(listener: () => void) {
     this.disposeListeners.splice(this.disposeListeners.indexOf(listener), 1);
+  }
+
+  /**
+   * @internal
+   */
+  getCommentBarButtons(): CommentBarButton[] {
+    return [this.foldoutButton, this.deleteButton];
   }
 }
 
@@ -873,6 +750,11 @@ css.register(`
 
 .blocklyCommentHighlight {
   fill: none;
+}
+
+.blocklyCommentText.blocklyActiveFocus {
+  border-color: #fc3;
+  border-width: 2px;
 }
 
 .blocklySelected .blocklyCommentHighlight {

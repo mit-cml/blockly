@@ -27,7 +27,6 @@ export class FieldImage extends Field<string> {
    * of the field.
    */
   private static readonly Y_PADDING = 1;
-  protected override size_: Size;
   protected readonly imageHeight: number;
 
   /** The function to be called when this field is clicked. */
@@ -151,6 +150,10 @@ export class FieldImage extends Field<string> {
       this.value_ as string,
     );
 
+    if (this.fieldGroup_) {
+      dom.addClass(this.fieldGroup_, 'blocklyImageField');
+    }
+
     if (this.clickHandler) {
       this.imageElement.style.cursor = 'pointer';
     }
@@ -207,6 +210,17 @@ export class FieldImage extends Field<string> {
     if (this.imageElement) {
       this.imageElement.setAttribute('alt', this.altText);
     }
+  }
+
+  /**
+   * Check whether this field should be clickable.
+   *
+   * @returns Whether this field is clickable.
+   */
+  isClickable(): boolean {
+    // Images are only clickable if they have a click handler and fulfill the
+    // contract to be clickable: enabled and attached to an editable block.
+    return super.isClickable() && !!this.clickHandler;
   }
 
   /**

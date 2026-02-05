@@ -13,11 +13,14 @@ import * as common from '../common.js';
 import * as contextMenu from '../contextmenu.js';
 import {ContextMenuRegistry} from '../contextmenu_registry.js';
 import {CommentDragStrategy} from '../dragging/comment_drag_strategy.js';
+import {getFocusManager} from '../focus_manager.js';
 import {IBoundedElement} from '../interfaces/i_bounded_element.js';
 import {IContextMenu} from '../interfaces/i_contextmenu.js';
 import {ICopyable} from '../interfaces/i_copyable.js';
 import {IDeletable} from '../interfaces/i_deletable.js';
 import {IDraggable} from '../interfaces/i_draggable.js';
+import {IFocusableNode} from '../interfaces/i_focusable_node.js';
+import type {IFocusableTree} from '../interfaces/i_focusable_tree.js';
 import {IRenderedElement} from '../interfaces/i_rendered_element.js';
 import {ISelectable} from '../interfaces/i_selectable.js';
 import * as layers from '../layers.js';
@@ -26,6 +29,7 @@ import {Coordinate} from '../utils/coordinate.js';
 import * as dom from '../utils/dom.js';
 import {Rect} from '../utils/rect.js';
 import {Size} from '../utils/size.js';
+import * as svgMath from '../utils/svg_math.js';
 import {WorkspaceSvg} from '../workspace_svg.js';
 import {CommentView} from './comment_view.js';
 import {WorkspaceComment} from './workspace_comment.js';
@@ -39,10 +43,11 @@ export class RenderedWorkspaceComment
     ISelectable,
     IDeletable,
     ICopyable<WorkspaceCommentCopyData>,
-    IContextMenu
+    IContextMenu,
+    IFocusableNode
 {
   /** The class encompassing the svg elements making up the workspace comment. */
-  private view: CommentView;
+  view: CommentView;
 
   public readonly workspace: WorkspaceSvg;
 
@@ -54,11 +59,12 @@ export class RenderedWorkspaceComment
 
     this.workspace = workspace;
 
-    this.view = new CommentView(workspace);
+    this.view = new CommentView(workspace, this.id);
     // Set the size to the default size as defined in the superclass.
     this.view.setSize(this.getSize());
     this.view.setEditable(this.isEditable());
     this.view.getSvgRoot().setAttribute('data-id', this.id);
+    this.view.getSvgRoot().setAttribute('id', this.id);
 
     this.addModelUpdateBindings();
 
@@ -67,15 +73,6 @@ export class RenderedWorkspaceComment
       'pointerdown',
       this,
       this.startGesture,
-    );
-    // Don't zoom with mousewheel; let it scroll instead.
-    browserEvents.conditionalBind(
-      this.view.getSvgRoot(),
-      'wheel',
-      this,
-      (e: Event) => {
-        e.stopPropagation();
-      },
     );
   }
 
@@ -103,6 +100,11 @@ export class RenderedWorkspaceComment
     // setText will trigger the change listener that updates
     // the model aka superclass.
     this.view.setText(text);
+  }
+
+  /** Sets the placeholder text displayed if the comment is empty. */
+  setPlaceholderText(text: string): void {
+    this.view.setPlaceholderText(text);
   }
 
   /** Sets the size of the comment. */
@@ -197,7 +199,12 @@ export class RenderedWorkspaceComment
   /** Disposes of the view. */
   override dispose() {
     this.disposing = true;
+    const focusManager = getFocusManager();
+    if (focusManager.getFocusedNode() === this) {
+      setTimeout(() => focusManager.focusTree(this.workspace), 0);
+    }
     if (!this.view.isDeadOrDying()) this.view.dispose();
+
     super.dispose();
   }
 
@@ -208,15 +215,8 @@ export class RenderedWorkspaceComment
   private startGesture(e: PointerEvent) {
     const gesture = this.workspace.getGesture(e);
     if (gesture) {
-      if (browserEvents.isTargetInput(e)) {
-        // If the text area was the focus, don't allow this event to bubble up
-        // and steal focus away from the editor/comment.
-        e.stopPropagation();
-      } else {
-        gesture.handleCommentStart(e, this);
-        this.workspace.getLayerManager()?.append(this, layers.BLOCK);
-      }
-      common.setSelected(this);
+      gesture.handleCommentStart(e, this);
+      getFocusManager().focusNode(this);
     }
   }
 
@@ -227,6 +227,11 @@ export class RenderedWorkspaceComment
     } else {
       dom.removeClass(this.getSvgRoot(), 'blocklyDraggingDelete');
     }
+  }
+
+  /** Returns whether this comment is copyable or not */
+  isCopyable(): boolean {
+    return this.isOwnMovable() && this.isOwnDeletable();
   }
 
   /** Returns whether this comment is movable or not. */
@@ -257,11 +262,13 @@ export class RenderedWorkspaceComment
   /** Visually highlights the comment. */
   select(): void {
     dom.addClass(this.getSvgRoot(), 'blocklySelected');
+    common.fireSelectedEvent(this);
   }
 
   /** Visually unhighlights the comment. */
   unselect(): void {
     dom.removeClass(this.getSvgRoot(), 'blocklySelected');
+    common.fireSelectedEvent(null);
   }
 
   /**
@@ -273,17 +280,37 @@ export class RenderedWorkspaceComment
       paster: WorkspaceCommentPaster.TYPE,
       commentState: commentSerialization.save(this, {
         addCoordinates: true,
+        saveIds: false,
       }),
     };
   }
 
   /** Show a context menu for this comment. */
-  showContextMenu(e: PointerEvent): void {
+  showContextMenu(e: Event): void {
     const menuOptions = ContextMenuRegistry.registry.getContextMenuOptions(
-      ContextMenuRegistry.ScopeType.COMMENT,
-      {comment: this},
+      {comment: this, focusedNode: this},
+      e,
     );
-    contextMenu.show(e, menuOptions, this.workspace.RTL, this.workspace);
+
+    let location: Coordinate;
+    if (e instanceof PointerEvent) {
+      location = new Coordinate(e.clientX, e.clientY);
+    } else {
+      // Show the menu based on the location of the comment
+      const xy = svgMath.wsToScreenCoordinates(
+        this.workspace,
+        this.getRelativeToSurfaceXY(),
+      );
+      location = xy.translate(10, 10);
+    }
+
+    contextMenu.show(
+      e,
+      menuOptions,
+      this.workspace.RTL,
+      this.workspace,
+      location,
+    );
   }
 
   /** Snap this comment to the nearest grid point. */
@@ -296,5 +323,40 @@ export class RenderedWorkspaceComment
     if (alignedXY !== currentXY) {
       this.moveTo(alignedXY, ['snap']);
     }
+  }
+
+  /**
+   * @returns The FocusableNode representing the editor portion of this comment.
+   */
+  getEditorFocusableNode(): IFocusableNode {
+    return this.view.getEditorFocusableNode();
+  }
+
+  /** See IFocusableNode.getFocusableElement. */
+  getFocusableElement(): HTMLElement | SVGElement {
+    return this.getSvgRoot();
+  }
+
+  /** See IFocusableNode.getFocusableTree. */
+  getFocusableTree(): IFocusableTree {
+    return this.workspace;
+  }
+
+  /** See IFocusableNode.onNodeFocus. */
+  onNodeFocus(): void {
+    this.select();
+    // Ensure that the comment is always at the top when focused.
+    this.workspace.getLayerManager()?.append(this, layers.BLOCK);
+    this.workspace.scrollBoundsIntoView(this.getBoundingRectangle());
+  }
+
+  /** See IFocusableNode.onNodeBlur. */
+  onNodeBlur(): void {
+    this.unselect();
+  }
+
+  /** See IFocusableNode.canBeFocused. */
+  canBeFocused(): boolean {
+    return true;
   }
 }

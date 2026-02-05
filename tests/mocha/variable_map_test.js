@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {assert} from '../../node_modules/chai/chai.js';
+import {assert} from '../../node_modules/chai/index.js';
 import {
   assertEventFired,
   assertEventNotFired,
@@ -21,7 +21,7 @@ suite('Variable Map', function () {
   setup(function () {
     sharedTestSetup.call(this);
     this.workspace = new Blockly.Workspace();
-    this.variableMap = new Blockly.VariableMap(this.workspace);
+    this.variableMap = this.workspace.getVariableMap();
   });
 
   teardown(function () {
@@ -39,17 +39,17 @@ suite('Variable Map', function () {
       this.variableMap.createVariable('name1', 'type1', 'id1');
 
       // Assert there is only one variable in the this.variableMap.
-      let keys = Array.from(this.variableMap.variableMap.keys());
+      let keys = this.variableMap.getTypes();
       assert.equal(keys.length, 1);
-      let varMapLength = this.variableMap.variableMap.get(keys[0]).length;
+      let varMapLength = this.variableMap.getVariablesOfType(keys[0]).length;
       assert.equal(varMapLength, 1);
 
       this.variableMap.createVariable('name1', 'type1');
       assertVariableValues(this.variableMap, 'name1', 'type1', 'id1');
       // Check that the size of the variableMap did not change.
-      keys = Array.from(this.variableMap.variableMap.keys());
+      keys = this.variableMap.getTypes();
       assert.equal(keys.length, 1);
-      varMapLength = this.variableMap.variableMap.get(keys[0]).length;
+      varMapLength = this.variableMap.getVariablesOfType(keys[0]).length;
       assert.equal(varMapLength, 1);
     });
 
@@ -59,16 +59,16 @@ suite('Variable Map', function () {
       this.variableMap.createVariable('name1', 'type1', 'id1');
 
       // Assert there is only one variable in the this.variableMap.
-      let keys = Array.from(this.variableMap.variableMap.keys());
+      let keys = this.variableMap.getTypes();
       assert.equal(keys.length, 1);
-      const varMapLength = this.variableMap.variableMap.get(keys[0]).length;
+      const varMapLength = this.variableMap.getVariablesOfType(keys[0]).length;
       assert.equal(varMapLength, 1);
 
       this.variableMap.createVariable('name1', 'type2', 'id2');
       assertVariableValues(this.variableMap, 'name1', 'type1', 'id1');
       assertVariableValues(this.variableMap, 'name1', 'type2', 'id2');
       // Check that the size of the variableMap did change.
-      keys = Array.from(this.variableMap.variableMap.keys());
+      keys = this.variableMap.getTypes();
       assert.equal(keys.length, 2);
     });
 
@@ -187,24 +187,6 @@ suite('Variable Map', function () {
     });
   });
 
-  suite('getVariableTypes', function () {
-    test('Trivial', function () {
-      this.variableMap.createVariable('name1', 'type1', 'id1');
-      this.variableMap.createVariable('name2', 'type1', 'id2');
-      this.variableMap.createVariable('name3', 'type2', 'id3');
-      this.variableMap.createVariable('name4', 'type3', 'id4');
-      const resultArray = this.variableMap.getVariableTypes();
-      // The empty string is always an option.
-      assert.deepEqual(resultArray, ['type1', 'type2', 'type3', '']);
-    });
-
-    test('None', function () {
-      // The empty string is always an option.
-      const resultArray = this.variableMap.getVariableTypes();
-      assert.deepEqual(resultArray, ['']);
-    });
-  });
-
   suite('getVariablesOfType', function () {
     test('Trivial', function () {
       const var1 = this.variableMap.createVariable('name1', 'type1', 'id1');
@@ -243,6 +225,72 @@ suite('Variable Map', function () {
     test('Does not exist', function () {
       const resultArray = this.variableMap.getVariablesOfType('type1');
       assert.deepEqual(resultArray, []);
+    });
+  });
+
+  suite(
+    'Using changeVariableType to change the type of a variable',
+    function () {
+      test('updates it to a new non-empty value', function () {
+        const variable = this.variableMap.createVariable(
+          'name1',
+          'type1',
+          'id1',
+        );
+        this.variableMap.changeVariableType(variable, 'type2');
+        const oldTypeVariables = this.variableMap.getVariablesOfType('type1');
+        const newTypeVariables = this.variableMap.getVariablesOfType('type2');
+        assert.deepEqual(oldTypeVariables, []);
+        assert.deepEqual(newTypeVariables, [variable]);
+        assert.equal(variable.getType(), 'type2');
+      });
+
+      test('updates it to a new empty value', function () {
+        const variable = this.variableMap.createVariable(
+          'name1',
+          'type1',
+          'id1',
+        );
+        this.variableMap.changeVariableType(variable, '');
+        const oldTypeVariables = this.variableMap.getVariablesOfType('type1');
+        const newTypeVariables = this.variableMap.getVariablesOfType('');
+        assert.deepEqual(oldTypeVariables, []);
+        assert.deepEqual(newTypeVariables, [variable]);
+        assert.equal(variable.getType(), '');
+      });
+
+      test('removes the type from the map when the last instance is changed', function () {
+        const var1 = this.variableMap.createVariable('name1', 'type1');
+        const var2 = this.variableMap.createVariable('name2', 'type2');
+        this.variableMap.changeVariableType(var1, 'type2');
+        assert.deepEqual(this.variableMap.getTypes(), ['type2']);
+      });
+    },
+  );
+
+  suite('addVariable', function () {
+    test('normally', function () {
+      const variable = new Blockly.VariableModel(this.workspace, 'foo', 'int');
+      assert.isNull(this.variableMap.getVariableById(variable.getId()));
+      this.variableMap.addVariable(variable);
+      assert.equal(
+        this.variableMap.getVariableById(variable.getId()),
+        variable,
+      );
+    });
+  });
+
+  suite('getTypes', function () {
+    test('when map is empty', function () {
+      const types = this.variableMap.getTypes();
+      assert.deepEqual(types, []);
+    });
+
+    test('with various types', function () {
+      this.variableMap.createVariable('name1', 'type1', 'id1');
+      this.variableMap.createVariable('name2', '', 'id2');
+      const types = this.variableMap.getTypes();
+      assert.deepEqual(types, ['type1', '']);
     });
   });
 
@@ -462,6 +510,27 @@ suite('Variable Map', function () {
             this.variableMap.renameVariableById('test id', 'test name');
           }, `Tried to rename a variable that didn't exist`);
         });
+      });
+    });
+
+    suite('variable type change events', function () {
+      test('are fired when a variable has its type changed', function () {
+        const variable = this.variableMap.createVariable(
+          'name1',
+          'type1',
+          'id1',
+        );
+        this.variableMap.changeVariableType(variable, 'type2');
+        assertEventFired(
+          this.eventSpy,
+          Blockly.Events.VarTypeChange,
+          {
+            oldType: 'type1',
+            newType: 'type2',
+            varId: 'id1',
+          },
+          this.workspace.id,
+        );
       });
     });
   });

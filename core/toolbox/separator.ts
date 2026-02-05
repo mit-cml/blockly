@@ -54,6 +54,10 @@ export class ToolboxSeparator extends ToolboxItem {
    */
   protected createDom_(): HTMLDivElement {
     const container = document.createElement('div');
+    // Ensure that the separator has a tab index to ensure it receives focus
+    // when clicked (since clicking isn't managed by the toolbox).
+    container.tabIndex = -1;
+    container.id = this.getId();
     const className = this.cssConfig_['container'];
     if (className) {
       dom.addClass(container, className);
@@ -87,7 +91,7 @@ Css.register(`
   margin: 5px 0;
 }
 
-.blocklyToolboxDiv[layout="h"] .blocklyTreeSeparator {
+.blocklyToolbox[layout="h"] .blocklyTreeSeparator {
   border-right: solid #e5e5e5 1px;
   border-bottom: none;
   height: auto;

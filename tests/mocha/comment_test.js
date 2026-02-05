@@ -5,7 +5,7 @@
  */
 
 import {EventType} from '../../build/src/core/events/type.js';
-import {assert} from '../../node_modules/chai/chai.js';
+import {assert} from '../../node_modules/chai/index.js';
 import {assertEventFired} from './test_helpers/events.js';
 import {
   sharedTestSetup,
@@ -139,6 +139,32 @@ suite('Comments', function () {
 
       this.comment.setBubbleVisible(true);
       assertBubbleSize(this.comment, 100, 100);
+    });
+  });
+  suite('Set/Get Bubble Location', function () {
+    teardown(function () {
+      sinon.restore();
+    });
+    function assertBubbleLocation(comment, x, y) {
+      const location = comment.getBubbleLocation();
+      assert.equal(location.x, x);
+      assert.equal(location.y, y);
+    }
+    test('Set Location While Visible', function () {
+      this.comment.setBubbleVisible(true);
+
+      this.comment.setBubbleLocation(new Blockly.utils.Coordinate(100, 100));
+      assertBubbleLocation(this.comment, 100, 100);
+
+      this.comment.setBubbleVisible(false);
+      assertBubbleLocation(this.comment, 100, 100);
+    });
+    test('Set Location While Invisible', function () {
+      this.comment.setBubbleLocation(new Blockly.utils.Coordinate(100, 100));
+      assertBubbleLocation(this.comment, 100, 100);
+
+      this.comment.setBubbleVisible(true);
+      assertBubbleLocation(this.comment, 100, 100);
     });
   });
 });

@@ -6,6 +6,7 @@
 
 import {CommentState} from '../icons/comment_icon.js';
 import {IconType} from '../icons/icon_types.js';
+import {Coordinate} from '../utils/coordinate.js';
 import {Size} from '../utils/size.js';
 import {IHasBubble, hasBubble} from './i_has_bubble.js';
 import {IIcon, isIcon} from './i_icon.js';
@@ -20,21 +21,27 @@ export interface ICommentIcon extends IIcon, IHasBubble, ISerializable {
 
   getBubbleSize(): Size;
 
+  setBubbleLocation(location: Coordinate): void;
+
+  getBubbleLocation(): Coordinate | undefined;
+
   saveState(): CommentState;
 
   loadState(state: CommentState): void;
 }
 
 /** Checks whether the given object is an ICommentIcon. */
-export function isCommentIcon(obj: object): obj is ICommentIcon {
+export function isCommentIcon(obj: any): obj is ICommentIcon {
   return (
     isIcon(obj) &&
     hasBubble(obj) &&
     isSerializable(obj) &&
-    (obj as any)['setText'] !== undefined &&
-    (obj as any)['getText'] !== undefined &&
-    (obj as any)['setBubbleSize'] !== undefined &&
-    (obj as any)['getBubbleSize'] !== undefined &&
+    typeof (obj as any).setText === 'function' &&
+    typeof (obj as any).getText === 'function' &&
+    typeof (obj as any).setBubbleSize === 'function' &&
+    typeof (obj as any).getBubbleSize === 'function' &&
+    typeof (obj as any).setBubbleLocation === 'function' &&
+    typeof (obj as any).getBubbleLocation === 'function' &&
     obj.getType() === IconType.COMMENT
   );
 }
